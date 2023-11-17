@@ -3507,20 +3507,53 @@ class Elements extends Component
             !ElementHelper::isRevision($element) &&
             (!$trackChanges || !empty($dirtyAttributes) || !empty($dirtyFields))
         ) {
-            $event = new ElementEvent([
-                'element' => $element,
-            ]);
-            $this->trigger(self::EVENT_BEFORE_UPDATE_SEARCH_INDEX, $event);
-            if ($event->isValid) {
-                if (Craft::$app->getRequest()->getIsConsoleRequest()) {
-                    Craft::$app->getSearch()->indexElementAttributes($element);
+            if ($trackChanges) {
+                // Check for searchable dirty fields
+                if (empty($dirtyAttributes)) {
+                    $searchableDirtyFields = [];
                 } else {
-                    Queue::push(new UpdateSearchIndex([
-                        'elementType' => get_class($element),
-                        'elementId' => $element->id,
-                        'siteId' => $propagate ? '*' : $element->siteId,
-                        'fieldHandles' => $dirtyFields,
-                    ]), 2048);
+                    $fieldLayout = $element->getFieldLayout();
+                    if ($fieldLayout) {
+                        $searchableDirtyFields = array_filter(
+                            $dirtyFields,
+                            function (string $fieldHandle) use ($fieldLayout): bool {
+                                $field = $fieldLayout->getFieldByHandle($fieldHandle);
+                                return !$field || $field->searchable;
+                            },
+                        );
+                    } else {
+                        $searchableDirtyFields = $dirtyFields;
+                    }
+                }
+
+                // Check for searchable dirty attributes
+                if (empty($dirtyAttributes)) {
+                    $searchableDirtyAttributes = [];
+                } else {
+                    $searchableAttributes = Craft::$app->getSearch()->getSearchableAttributes($element);
+                    $searchableDirtyAttributes = array_intersect($dirtyAttributes, $searchableAttributes);
+                }
+            } else {
+                $searchableDirtyAttributes = $dirtyAttributes;
+                $searchableDirtyFields = $dirtyFields;
+            }
+
+            if (!empty($searchableDirtyAttributes) || !empty($searchableDirtyFields)) {
+                $event = new ElementEvent([
+                    'element' => $element,
+                ]);
+                $this->trigger(self::EVENT_BEFORE_UPDATE_SEARCH_INDEX, $event);
+                if ($event->isValid) {
+                    if (Craft::$app->getRequest()->getIsConsoleRequest()) {
+                        Craft::$app->getSearch()->indexElementAttributes($element);
+                    } else {
+                        Queue::push(new UpdateSearchIndex([
+                            'elementType' => get_class($element),
+                            'elementId' => $element->id,
+                            'siteId' => $propagate ? '*' : $element->siteId,
+                            'fieldHandles' => $searchableDirtyFields,
+                        ]), 2048);
+                    }
                 }
             }
         }

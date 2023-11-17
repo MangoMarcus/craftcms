@@ -178,12 +178,7 @@ class Search extends Component
         Db::delete(Table::SEARCHINDEX, $deleteCondition);
 
         // Update the element attributes' keywords
-        $searchableAttributes = array_flip($element::searchableAttributes());
-        $searchableAttributes['slug'] = true;
-        if ($element::hasTitles()) {
-            $searchableAttributes['title'] = true;
-        }
-        foreach (array_keys($searchableAttributes) as $attribute) {
+        foreach ($this->getSearchableAttributes($element) as $attribute) {
             $value = $element->getSearchKeywords($attribute);
             $this->_indexKeywords($element, $value, attribute: $attribute);
         }
@@ -378,6 +373,27 @@ WHERE NOT EXISTS (
 SQL;
         }
         $db->createCommand($sql)->execute();
+    }
+
+    /**
+     * Gets the searchable attributes for a given element, ensuring that `slug` and `title` are
+     * included.
+     *
+     * @param ElementInterface $element
+     * @return array
+     */
+    public function getSearchableAttributes(ElementInterface $element): array
+    {
+        $searchableAttributes = $element::searchableAttributes();
+        if (!in_array('slug', $searchableAttributes, true)) {
+            $searchableAttributes[] = 'slug';
+        }
+
+        if (!in_array('title', $searchableAttributes, true) && $element::hasTitles()) {
+            $searchableAttributes[] = 'title';
+        }
+
+        return $searchableAttributes;
     }
 
     /**
